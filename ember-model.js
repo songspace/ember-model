@@ -703,9 +703,9 @@ Ember.Model = Ember.Object.extend(Ember.Evented, {
     set(this, '_dirtyAttributes', []);
   },
 
-  dataDidChange: Ember.observer(function() {
+  dataDidChange: Ember.observer('_data', function() {
     this._reloadHasManys();
-  }, '_data'),
+  }),
 
   _registerHasManyArray: function(array) {
     if (!this._hasManyArrays) { this._hasManyArrays = Ember.A([]); }
