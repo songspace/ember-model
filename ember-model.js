@@ -286,9 +286,9 @@ Ember.ManyArray = Ember.RecordArray.extend({
   },
 
   replaceContent: function(index, removed, added) {
-    added = Ember.EnumerableUtils.map(added, function(record) {
+    added = added.map(function(record) {
       return record._reference;
-    }, this);
+    });
 
     this._super(index, removed, added);
   },
@@ -743,7 +743,7 @@ Ember.Model = Ember.Object.extend(Ember.Evented, {
       } else {
         mapFunction = function(id) { return type._getOrCreateReferenceForId(id); };
       }
-      content = Ember.EnumerableUtils.map(content, mapFunction);
+      content = content.map(mapFunction);
     }
 
     return Ember.A(content || []);
@@ -841,7 +841,7 @@ Ember.Model.reopenClass({
     }
 
     if (isFetch) {
-      deferred = Ember.Deferred.create();
+      deferred = Ember.RSVP.defer();
       Ember.set(deferred, 'resolveWith', records);
 
       if (!this._currentBatchDeferreds) { this._currentBatchDeferreds = []; }
@@ -850,7 +850,7 @@ Ember.Model.reopenClass({
 
     Ember.run.scheduleOnce('data', this, this._executeBatch);
 
-    return isFetch ? deferred : records;
+    return isFetch ? deferred.promise : records;
   },
 
   findAll: function() {
@@ -940,7 +940,7 @@ Ember.Model.reopenClass({
         this._currentBatchRecordArrays = [];
       }
 
-      deferred = Ember.Deferred.create();
+      deferred = Ember.RSVP.defer();
 
       //Attached the record to the deferred so we can resolove it later.
       Ember.set(deferred, 'resolveWith', record);
@@ -950,7 +950,7 @@ Ember.Model.reopenClass({
 
       Ember.run.scheduleOnce('data', this, this._executeBatch);
 
-      return deferred;
+      return deferred.promise;
     } else {
       return adapter.find(record, id);
     }
@@ -1561,29 +1561,23 @@ Ember.RESTAdapter = Ember.Adapter.extend({
 
 var get = Ember.get;
 
-Ember.LoadPromise = Ember.Object.extend(Ember.DeferredMixin, {
-  init: function() {
-    this._super.apply(this, arguments);
-
-    var target = get(this, 'target');
-
-    if (get(target, 'isLoaded') && !get(target, 'isNew')) {
-      this.resolve(target);
-    } else {
-      target.one('didLoad', this, function() {
-        this.resolve(target);
-      });
-    }
-  }
-});
-
 Ember.loadPromise = function(target) {
   if (Ember.isNone(target)) {
     return null;
   } else if (target.then) {
     return target;
   } else {
-    return Ember.LoadPromise.create({target: target});
+    var deferred = Ember.RSVP.defer();
+
+    if (get(target, 'isLoaded') && !get(target, 'isNew')) {
+      deferred.resolve(target);
+    } else {
+      target.one('didLoad', this, function() {
+        deferred.resolve(target);
+      });
+    }
+
+    return deferred.promise;
   }
 };
 
