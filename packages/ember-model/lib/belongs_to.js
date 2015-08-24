@@ -8,30 +8,34 @@ function getType() {
   return this.type;
 }
 
-Ember.belongsTo = function(type, options) {
+Ember.belongsTo = function (type, options) {
   options = options || {};
 
-  var meta = { type: type, isRelationship: true, options: options, kind: 'belongsTo', getType: getType },
+  var meta = { type: type, isRelationship: true, options: options, kind: 'belongsTo', getType: getType, lastValue: null },
       relationshipKey = options.key;
 
-  return Ember.computed(function(key, value, oldValue) {
-    type = meta.getType();
+  return Ember.computed('_data', {
+    get: function() {
+      var type = meta.getType(meta.type, this.container);
+      return meta.lastValue = this.getBelongsTo(relationshipKey, type, meta);
+    },
+    set: function(key, value) {
+      type = meta.getType();
 
-    var dirtyAttributes = get(this, '_dirtyAttributes'),
-        createdDirtyAttributes = false;
+      var dirtyAttributes = get(this, '_dirtyAttributes'),
+          createdDirtyAttributes = false;
 
-    if (!dirtyAttributes) {
-      dirtyAttributes = [];
-      createdDirtyAttributes = true;
-    }
+      if (!dirtyAttributes) {
+        dirtyAttributes = [];
+        createdDirtyAttributes = true;
+      }
 
-    if (arguments.length > 1) {
       if (value) {
         Ember.assert(Ember.String.fmt('Attempted to set property of type: %@ with a value of type: %@',
                      [value.constructor, type]),
                      value instanceof type);
 
-        if (oldValue !== value) {
+        if (meta.lastValue !== value) {
           dirtyAttributes.pushObject(key);
         } else {
           dirtyAttributes.removeObject(key);
@@ -41,11 +45,9 @@ Ember.belongsTo = function(type, options) {
           set(this, '_dirtyAttributes', dirtyAttributes);
         }
       }
-      return value === undefined ? null : value;  
-    } else {
-      return this.getBelongsTo(relationshipKey, type, meta);
+      return meta.lastValue = value === undefined ? null : value;
     }
-  }).property('_data').meta(meta);
+  }).meta(meta);
 };
 
 Ember.Model.reopen({

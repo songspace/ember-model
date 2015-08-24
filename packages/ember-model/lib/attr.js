@@ -52,20 +52,26 @@ function serialize(value, type) {
 }
 
 Ember.attr = function(type, options) {
-  return Ember.computed(function(key, value) {
-    var data = get(this, '_data'),
-        dataKey = this.dataKey(key),
-        dataValue = data && get(data, dataKey),
-        beingCreated = meta(this).proto === this,
-        dirtyAttributes = get(this, '_dirtyAttributes'),
-        createdDirtyAttributes = false;
+  return Ember.computed({
+    get: function(key) {
+      var data = get(this, '_data'),
+          dataKey = this.dataKey(key),
+          dataValue = data && get(data, dataKey);
+      return this.getAttr(key, deserialize(dataValue, type));
+    },
+    set: function(key, value) {
+      var data = get(this, '_data'),
+          dataKey = this.dataKey(key),
+          dataValue = data && get(data, dataKey),
+          beingCreated = meta(this).proto === this,
+          dirtyAttributes = get(this, '_dirtyAttributes'),
+          createdDirtyAttributes = false;
 
-    if (!dirtyAttributes) {
-      dirtyAttributes = [];
-      createdDirtyAttributes = true;
-    }
+      if (!dirtyAttributes) {
+        dirtyAttributes = [];
+        createdDirtyAttributes = true;
+      }
 
-    if (arguments.length === 2) {
       if (beingCreated) {
         if (!data) {
           data = {};
@@ -86,7 +92,5 @@ Ember.attr = function(type, options) {
 
       return value;
     }
-
-    return this.getAttr(key, deserialize(dataValue, type));
   }).property('_data').meta({isAttribute: true, type: type, options: options});
 };
