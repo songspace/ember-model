@@ -1695,7 +1695,7 @@ Ember.onLoad('Ember.Application', function(Application) {
   Application.initializer({
     name: "dataAdapter",
 
-    initialize: function(container, application) {
+    initialize: function(application) {
       application.register('dataAdapter:main', DebugAdapter);
     }
   });
