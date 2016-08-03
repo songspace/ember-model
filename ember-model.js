@@ -345,10 +345,12 @@ Ember.HasManyArray = Ember.ManyArray.extend({
         reference = content.objectAt(idx),
         record;
 
-    if (reference.record) {
-      record = reference.record;
-    } else {
-      record = klass.find(reference.id);
+    if (reference) {
+      if (reference.record) {
+        record = reference.record;
+      } else {
+        record = klass.find(reference.id);
+      }
     }
 
     return record;
