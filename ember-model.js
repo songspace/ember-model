@@ -381,10 +381,17 @@ Ember.EmbeddedHasManyArray = Ember.ManyArray.extend({
 
   materializeRecord: function(idx) {
     var klass = get(this, 'modelClass'),
-        primaryKey = get(klass, 'primaryKey'),
-        content = get(this, 'content'),
-        reference = content.objectAt(idx),
-        attrs = reference.data;
+      primaryKey = get(klass, 'primaryKey'),
+      content = get(this, 'content'),
+      reference = content.objectAt(idx),
+      attrs;
+
+    if (reference !== undefined) {
+      attrs = reference.data;
+    } else {
+      //throw new Error('There was a problem with materializeRecord() on ' + klass);
+      return;
+    }
 
     if (reference.record) {
       return reference.record;
