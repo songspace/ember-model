@@ -1,8 +1,8 @@
 var attr = Ember.attr;
 
-module("Ember.EmbeddedHasManyArray - embedded objects loading");
+QUnit.module("Ember.EmbeddedHasManyArray - embedded objects loading");
 
-test("derp", function() {
+QUnit.test("derp", function(assert) {
   var json = {
     id: 1,
     title: 'foo',
@@ -29,14 +29,14 @@ test("derp", function() {
 
   var comments = article.get('comments');
 
-  equal(comments.get('length'), 3);
-  ok(Ember.run(comments, comments.get, 'firstObject') instanceof Comment);
-  deepEqual(Ember.run(comments, comments.mapProperty, 'text'), ['uno', 'dos', 'tres']);
-  ok(!comments.everyProperty('isNew'), "Records should not be new");
+  assert.equal(comments.get('length'), 3);
+  assert.ok(Ember.run(comments, comments.get, 'firstObject') instanceof Comment);
+  assert.deepEqual(Ember.run(comments, comments.mapBy, 'text'), ['uno', 'dos', 'tres']);
+  assert.ok(!comments.isEvery('isNew'), "Records should not be new");
 });
 
-test("loading embedded data into a parent updates the child records", function() {
-  expect(2);
+QUnit.test("loading embedded data into a parent updates the child records", function(assert) {
+  assert.expect(2);
 
   var json = {
     id: 1,
@@ -68,10 +68,50 @@ test("loading embedded data into a parent updates the child records", function()
   };
 
   var comment = Comment.find(1);
-  equal(comment.get('body'), 'old');
+  assert.equal(comment.get('body'), 'old');
 
   var post = Post.find(1);
   post.load(1, json);
 
-  equal(comment.get('body'), 'new');
+  assert.equal(comment.get('body'), 'new');
+});
+
+QUnit.test("loading embedded data into a parent with deleted children deletes the children", function(assert) {
+  assert.expect(2);
+
+  var Comment = Ember.Model.extend({
+    id: attr(),
+    body: attr()
+  });
+
+  var Post = Ember.Model.extend({
+    id: attr(),
+    comments: Ember.hasMany(Comment, {key: 'comments', embedded: true})
+  });
+
+  Post.adapter = {
+    find: function(record, id) {
+      record.load(id, {comments: []});
+    }
+  };
+
+  var post = Post.find(1);
+  var comment = Comment.create();
+  post.get('comments').pushObject(comment);
+
+  var json = {
+    id: 1,
+    comments: [
+      {id: 1, body: 'new'}
+    ]
+  };
+
+  // deletes all children and load new ones.
+  post.get('comments').forEach(function(comment) {
+    comment.didDeleteRecord();
+  });
+  post.load(1, json);
+
+  assert.equal(post.get('comments.length'), 1);
+  assert.equal(post.get('comments.firstObject.body'), 'new');
 });

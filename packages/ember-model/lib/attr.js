@@ -1,3 +1,4 @@
+require('ember-model/computed');
 var get = Ember.get,
     set = Ember.set,
     meta = Ember.meta;
@@ -52,23 +53,27 @@ function serialize(value, type) {
 }
 
 Ember.attr = function(type, options) {
-  return Ember.computed({
-    get: function(key) {
+  return Ember.Model.computed("_data", {
+    get: function(key){
       var data = get(this, '_data'),
           dataKey = this.dataKey(key),
           dataValue = data && get(data, dataKey);
+
+      if (dataValue==null && options && options.defaultValue!=null) {
+        return Ember.copy(options.defaultValue);
+      }
+
       return this.getAttr(key, deserialize(dataValue, type));
     },
-    set: function(key, value) {
+    set: function(key, value){
       var data = get(this, '_data'),
           dataKey = this.dataKey(key),
           dataValue = data && get(data, dataKey),
           beingCreated = meta(this).proto === this,
           dirtyAttributes = get(this, '_dirtyAttributes'),
           createdDirtyAttributes = false;
-
       if (!dirtyAttributes) {
-        dirtyAttributes = [];
+        dirtyAttributes = Ember.A([]);
         createdDirtyAttributes = true;
       }
 
@@ -92,5 +97,5 @@ Ember.attr = function(type, options) {
 
       return value;
     }
-  }).property('_data').meta({isAttribute: true, type: type, options: options});
+  }).meta({isAttribute: true, type: type, options: options});
 };

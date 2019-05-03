@@ -2,15 +2,26 @@ var get = Ember.get, set = Ember.set;
 
 Ember.ManyArray = Ember.RecordArray.extend({
   _records: null,
-  originalContent: [],
+  originalContent: null,
+  _modifiedRecords: null,
 
-  isDirty: function() {
+  unloadObject: function(record) {
+    var obj = get(this, 'content').findBy('clientId', record._reference.clientId);
+    get(this, 'content').removeObject(obj);
+
+    var originalObj = get(this, 'originalContent').findBy('clientId', record._reference.clientId);
+    get(this, 'originalContent').removeObject(originalObj);
+  },
+
+  isDirty: Ember.computed('content.[]', 'originalContent.[]', '_modifiedRecords.[]', function() {
     var originalContent = get(this, 'originalContent'),
         originalContentLength = get(originalContent, 'length'),
         content = get(this, 'content'),
         contentLength = get(content, 'length');
 
     if (originalContentLength !== contentLength) { return true; }
+
+    if (this._modifiedRecords && this._modifiedRecords.length) { return true; }
 
     var isDirty = false;
 
@@ -22,21 +33,34 @@ Ember.ManyArray = Ember.RecordArray.extend({
     }
 
     return isDirty;
-  }.property('content.[]', 'originalContent'),
+  }),
 
   objectAtContent: function(idx) {
     var content = get(this, 'content');
 
-    if (!content.length) { return; }
+    if (!content.length || idx >= content.length) { return; }
 
-    return this.materializeRecord(idx);
+    // need to add observer if it wasn't materialized before
+    var observerNeeded = (content[idx].record) ? false : true;
+
+    var owner = Ember.getOwner(this);
+    var record = this.materializeRecord(idx, owner);
+
+    if (observerNeeded) {
+      var isDirtyRecord = record.get('isDirty'), isNewRecord = record.get('isNew');
+      if (isDirtyRecord || isNewRecord) { this._modifiedRecords.pushObject(content[idx]); }
+      Ember.addObserver(content[idx], 'record.isDirty', this, 'recordStateChanged');
+      record.registerParentHasManyArray(this);
+    }
+
+    return record;
   },
 
   save: function() {
     // TODO: loop over dirty records only
     return Ember.RSVP.all(this.map(function(record) {
       return record.save();
-    }));
+    })).then(Ember.A);
   },
 
   replaceContent: function(index, removed, added) {
@@ -47,7 +71,7 @@ Ember.ManyArray = Ember.RecordArray.extend({
     this._super(index, removed, added);
   },
 
-  _contentDidChange: function() {
+  _contentDidChange: Ember.observer('content', function() {
     var content = get(this, 'content');
     var contentPrev = this._content;
 
@@ -63,13 +87,34 @@ Ember.ManyArray = Ember.RecordArray.extend({
     }
 
     this._content = content;
-  }.observes('content'),
+  }),
 
-  arrayWillChange: function(item, idx, removedCnt, addedCnt) {},
+  arrayWillChange: function(item, idx, removedCnt, addedCnt) {
+    var content = item;
+    for (var i = idx; i < idx+removedCnt; i++) {
+      var currentItem = content[i];
+      if (currentItem && currentItem.record) {
+        this._modifiedRecords.removeObject(currentItem);
+        currentItem.record.unregisterParentHasManyArray(this);
+        Ember.removeObserver(currentItem, 'record.isDirty', this, 'recordStateChanged');
+      }
+    }
+  },
 
   arrayDidChange: function(item, idx, removedCnt, addedCnt) {
     var parent = get(this, 'parent'), relationshipKey = get(this, 'relationshipKey'),
         isDirty = get(this, 'isDirty');
+
+    var content = item;
+    for (var i = idx; i < idx+addedCnt; i++) {
+      var currentItem = content[i];
+      if (currentItem && currentItem.record) {
+        var isDirtyRecord = currentItem.record.get('isDirty'), isNewRecord = currentItem.record.get('isNew'); // why newly created object is not dirty?
+        if (isDirtyRecord || isNewRecord) { this._modifiedRecords.pushObject(currentItem); }
+        Ember.addObserver(currentItem, 'record.isDirty', this, 'recordStateChanged');
+        currentItem.record.registerParentHasManyArray(this);
+      }
+    }
 
     if (isDirty) {
       parent._relationshipBecameDirty(relationshipKey);
@@ -78,22 +123,49 @@ Ember.ManyArray = Ember.RecordArray.extend({
     }
   },
 
+  load: function(content) {
+    Ember.setProperties(this, {
+      content: content,
+      originalContent: Ember.A(content.slice())
+    });
+    set(this, '_modifiedRecords', Ember.A([]));
+  },
+
+  revert: function() {
+    this._setupOriginalContent();
+  },
+
   _setupOriginalContent: function(content) {
     content = content || get(this, 'content');
     if (content) {
-      set(this, 'originalContent', content.slice());
+      set(this, 'originalContent', Ember.A(content.slice()));
     }
+    set(this, '_modifiedRecords', Ember.A([]));
   },
 
   init: function() {
     this._super();
     this._setupOriginalContent();
     this._contentDidChange();
+  },
+
+  recordStateChanged: function(obj, keyName) {
+    var parent = get(this, 'parent'), relationshipKey = get(this, 'relationshipKey');
+
+    if (obj.record.get('isDirty')) {
+      if (this._modifiedRecords.indexOf(obj) === -1) { this._modifiedRecords.pushObject(obj); }
+      parent._relationshipBecameDirty(relationshipKey);
+    } else {
+      if (this._modifiedRecords.indexOf(obj) > -1) { this._modifiedRecords.removeObject(obj); }
+      if (!this.get('isDirty')) {
+        parent._relationshipBecameClean(relationshipKey);
+      }
+    }
   }
 });
 
 Ember.HasManyArray = Ember.ManyArray.extend({
-  materializeRecord: function(idx) {
+  materializeRecord: function(idx, owner) {
     var klass = get(this, 'modelClass'),
         content = get(this, 'content'),
         reference = content.objectAt(idx),
@@ -106,8 +178,11 @@ Ember.HasManyArray = Ember.ManyArray.extend({
         record = klass.find(reference.id);
       }
     }
-
-    return record;
+    if (record) {
+      Ember.setOwner(record, owner);
+      return record;
+    }
+    return klass._findFetchById(reference.id, false, owner);
   },
 
   toJSON: function() {
@@ -133,23 +208,27 @@ Ember.EmbeddedHasManyArray = Ember.ManyArray.extend({
     return record; // FIXME: inject parent's id
   },
 
-  materializeRecord: function(idx) {
+  materializeRecord: function(idx, owner) {
     var klass = get(this, 'modelClass'),
         primaryKey = get(klass, 'primaryKey'),
         content = get(this, 'content'),
         reference = content.objectAt(idx),
         attrs = reference.data;
 
+    var record;
     if (reference.record) {
-      return reference.record;
+      record = reference.record;
     } else {
-      var record = klass.create({ _reference: reference });
+      record = klass.create({ _reference: reference });
       reference.record = record;
+      Ember.setOwner(record, owner);
+
       if (attrs) {
         record.load(attrs[primaryKey], attrs);
       }
-      return record;
     }
+
+    return record;
   },
 
   toJSON: function() {

@@ -15,7 +15,7 @@ Ember.RESTAdapter = Ember.Adapter.extend({
 
   didFind: function(record, id, data) {
     var rootKey = get(record.constructor, 'rootKey'),
-        dataToLoad = rootKey ? data[rootKey] : data;
+        dataToLoad = rootKey ? get(data, rootKey) : data;
 
     record.load(id, dataToLoad);
   },
@@ -32,7 +32,7 @@ Ember.RESTAdapter = Ember.Adapter.extend({
 
   didFindAll: function(klass, records, data) {
     var collectionKey = get(klass, 'collectionKey'),
-        dataToLoad = collectionKey ? data[collectionKey] : data;
+        dataToLoad = collectionKey ? get(data, collectionKey) : data;
 
     records.load(klass, dataToLoad);
   },
@@ -49,7 +49,7 @@ Ember.RESTAdapter = Ember.Adapter.extend({
 
   didFindQuery: function(klass, records, params, data) {
       var collectionKey = get(klass, 'collectionKey'),
-          dataToLoad = collectionKey ? data[collectionKey] : data;
+          dataToLoad = collectionKey ? get(data, collectionKey) : data;
 
       records.load(klass, dataToLoad);
   },
@@ -65,10 +65,7 @@ Ember.RESTAdapter = Ember.Adapter.extend({
   },
 
   didCreateRecord: function(record, data) {
-    var rootKey = get(record.constructor, 'rootKey'),
-        primaryKey = get(record.constructor, 'primaryKey'),
-        dataToLoad = rootKey ? data[rootKey] : data;
-    record.load(dataToLoad[primaryKey], dataToLoad);
+    this._loadRecordFromData(record, data);
     record.didCreateRecord();
   },
 
@@ -84,6 +81,7 @@ Ember.RESTAdapter = Ember.Adapter.extend({
   },
 
   didSaveRecord: function(record, data) {
+    this._loadRecordFromData(record, data);
     record.didSaveRecord();
   },
 
@@ -92,7 +90,7 @@ Ember.RESTAdapter = Ember.Adapter.extend({
         url = this.buildURL(record.constructor, get(record, primaryKey)),
         self = this;
 
-    return this.ajax(url, record.toJSON(), "DELETE").then(function(data) {  // TODO: Some APIs may or may not return data
+    return this.ajax(url, record.toJSON(), "DELETE").then(function(data) {
       self.didDeleteRecord(record, data);
     });
   },
@@ -107,12 +105,13 @@ Ember.RESTAdapter = Ember.Adapter.extend({
 
   buildURL: function(klass, id) {
     var urlRoot = get(klass, 'url');
+    var urlSuffix = get(klass, 'urlSuffix') || '';
     if (!urlRoot) { throw new Error('Ember.RESTAdapter requires a `url` property to be specified'); }
 
     if (!Ember.isEmpty(id)) {
-      return urlRoot + "/" + id + ".json";
+      return urlRoot + "/" + id + urlSuffix;
     } else {
-      return urlRoot + ".json";
+      return urlRoot + urlSuffix;
     }
   },
 
@@ -125,6 +124,7 @@ Ember.RESTAdapter = Ember.Adapter.extend({
   },
 
   _ajax: function(url, params, method, settings) {
+    var self = this;
     if (!settings) {
       settings = this.ajaxSettings(url, method);
     }
@@ -145,15 +145,35 @@ Ember.RESTAdapter = Ember.Adapter.extend({
 
       settings.error = function(jqXHR, textStatus, errorThrown) {
         // https://github.com/ebryn/ember-model/issues/202
-        if (jqXHR) {
+        if (jqXHR && typeof jqXHR === 'object') {
           jqXHR.then = null;
         }
 
-        Ember.run(null, reject, jqXHR);
+        self._handleRejections(method, jqXHR, resolve, reject);
       };
 
 
       Ember.$.ajax(settings);
-   });
+   }, "ember-model: RESTAdapter#ajax ${method} to " + url);
+  },
+
+  _handleRejections: function(method, jqXHR, resolve, reject) {
+    if (method === "DELETE" && jqXHR.status >= 200 && jqXHR.status < 300) {
+      Ember.run(null, resolve, null);
+    } else {
+      Ember.run(null, reject, jqXHR);
+    }
+  },
+
+  _loadRecordFromData: function(record, data) {
+    var rootKey = get(record.constructor, 'rootKey'),
+        primaryKey = get(record.constructor, 'primaryKey');
+    // handle HEAD response where no data is provided by server
+    if (data) {
+      data = rootKey ? get(data, rootKey) : data;
+      if (!Ember.isEmpty(data)) {
+        record.load(data[primaryKey], data);
+      }
+    }
   }
 });

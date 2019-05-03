@@ -1,10 +1,7 @@
 {
   "name": "ember-model",
-  "version": "0.0.11",
+  "version": "0.0.18",
   "main": "ember-model.js",
-  "devDependencies": {
-    "qunit": "~1.11"
-  },
   "ignore": [
     "**/.*",
     "node_modules",

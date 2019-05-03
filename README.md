@@ -4,11 +4,17 @@
 
 Ember Model (EM) is a simple and lightweight model library for Ember. It intentionally supports a limited feature set. The main goal is to provide primitives on top of $.ajax that are required by Ember.
 
-EM is still very much a work in progress, but it's flexible enough to be used in apps today. It was extracted out of an Ember app. Please see the issues section for a list of bugs and planned features.
+EM is still a work in progress, but it's flexible and stable enough to be [used in production apps today](#whos-using-ember-model). It was extracted out of an Ember app. Please see the issues section for a list of bugs and planned features.
 
 ## Getting Started with Ember Model
 
-[Download latest build of Ember Model](http://builds.erikbryn.com/ember-model/ember-model-latest.js)
+### Ember CLI
+
+`ember install ember-model`
+
+### Bower
+
+`bower install ember-model --save`
 
 [![Getting started Embercast](http://f.cl.ly/items/1T1t2T2p3d2u0A2b0q2P/embercast.png)](http://www.embercasts.com/episodes/getting-started-with-ember-model)
 
@@ -28,6 +34,58 @@ Need more help getting started? Join us in #ember-model on Freenode.
 If you want more features than Ember Model provides, file an issue. Feature requests/contributions are welcome but the goal is to keep things simple and fast.
 
 ## Example usage
+
+### Ember CLI / ES6 modules
+
+```javascript
+// app/models/user.js
+import { Model, attr, hasMany } from 'ember-model';
+
+var User = Model.extend({
+  id: attr(),
+  name: attr(),
+  comments: hasMany("comment", {key: 'comment_ids'})
+}).reopenClass({
+  url: "/users"
+});
+
+export default User;
+```
+
+```javascript
+// app/models/comment.js
+import { Model, attr, hasMany } from 'ember-model';
+
+var Comment = Model.extend({
+  id: attr(),
+  text: attr()
+}).reopenClass({
+  url: "/comments"
+});
+
+export default Comment;
+```
+
+```javascript
+// create example
+var newUser = this.store.createRecord('user', {name: "Erik"});
+newUser.save(); // POST to /users
+
+// hasMany example
+var comments = newUser.get('comments');
+comments.create({text: "hello!"});
+comments.save(); // POST to /comments
+
+// find & update example
+
+this.store.find('user', 1).then(user => { // GET /users/1
+  user.set('name', 'Kris');
+  user.get('isDirty'); // => true
+  user.save(); // PUT /users/1
+});
+```
+
+### Globals
 
 ```javascript
 var attr = Ember.attr, hasMany = Ember.hasMany;
@@ -53,20 +111,30 @@ App.Comment.adapter = Ember.RESTAdapter.create();
 // create example
 
 var newUser = App.User.create({name: "Erik"});
-newUser.save(); // POST to /users.json
+newUser.save(); // POST to /users
 
 // hasMany example
 var comments = newUser.get('comments');
 comments.create({text: "hello!"});
-comments.save(); // POST to /comments.json
+comments.save(); // POST to /comments
 
 // find & update example
 
-var existingUser = App.User.find(1); // GET /users/1.json
+var existingUser = App.User.find(1); // GET /users/1
 existingUser.set('name', 'Kris');
 existingUser.get('isDirty'); // => true
-existingUser.save(); // PUT /users/1.json
+existingUser.save(); // PUT /users/1
 ```
+
+## Store API
+
+`Store#find(<type>)` - find all records by type, returns a promise
+
+`Store#find(<type>, <id>)` - find by primary key (multiple calls within a single run loop can coalesce to a findMany), returns a promise
+
+`Store#find(<type>, <object>)` - find query - object gets passed directly to your adapter, returns a promise
+
+`Store#createRecord(<type>, <object>)` - create a new record
 
 ## Model API
 
@@ -76,7 +144,7 @@ existingUser.save(); // PUT /users/1.json
 
 `Model#deleteRecord` - delete a record
 
-`Model#load` - load JSON into the record (typically used inside adapter definition)
+`Model#load(<id>, <object>)` - load JSON into the record (typically used inside adapter definition)
 
 `Model#toJSON` - serialize the record to JSON
 
@@ -155,6 +223,14 @@ var Post = Ember.Model.extend({
   time: attr(Time)
 });
 ```
+### Default values
+
+Attributes can have a default value.
+```javascript
+App.Post = Ember.Model.extend({
+  tags: attr(Array,{defaultValue:[]})
+});
+```
 
 ## Relationships
 
@@ -168,7 +244,7 @@ Relationships are defined by using relationship computed property macros in plac
 
 `Ember.hasMany(type, options)` - Provides access to an array of related objects.
 
-Both relationships take two arguments. 
+Both relationships take two arguments.
 
 - `type` - Class of the related model or string representation (eg. App.Comment or 'App.Comment').
 
@@ -229,7 +305,7 @@ commentsJson = [
   },
   {
     id: 2,
-    body: 'Coment body two',
+    body: 'Comment body two',
     post_id: 99
   }
 ];
@@ -237,7 +313,7 @@ commentsJson = [
 App.Post = Ember.Model.extend({
   id: Ember.attr(),
   title: Ember.attr(),
-  body: Ember.attr()
+  body: Ember.attr(),
   comments: Ember.hasMany('App.Comment', {key: 'comment_ids'})
 });
 
@@ -285,7 +361,7 @@ App.User.primaryKey = 'token';
 ```
 
 ```
-GET /users/a4bc81f90.json
+GET /users/a4bc81f90
 {"token": "a4bc81f90", "name": "Brian"}
 ```
 
@@ -302,7 +378,7 @@ App.User.rootKey = 'user';
 ```
 
 ```
-GET /users/1.json
+GET /users/1
 {"user": {"id": 1, "name": "Brian"}}
 ```
 
@@ -319,7 +395,7 @@ App.User.collectionKey = 'users';
 ```
 
 ```
-GET /users.json
+GET /users
 {"users": [{"id": 1, "name": "Brian"}]}
 ```
 
@@ -339,12 +415,30 @@ App.User.camelizeKeys = true;
 ```
 
 ```
-GET /users/1.json
+GET /users/1
 {"id": 1, "first_name": "Brian"}
 ```
 
 ```javascript
 user.get('firstName') // => Brian
+```
+
+
+### urlSuffix
+
+
+By default no suffix is added to the url. You may want to specifically add one if using the same url for html and json requests.
+
+```javascript
+App.User = Ember.Model.extend({
+  first_name: attr()
+});
+App.User.urlSuffix = '.json';
+```
+
+```
+GET /users/1.json
+{"id": 1, "first_name": "Brian"}
 ```
 
 
